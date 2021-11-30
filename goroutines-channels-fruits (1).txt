@@ -1,0 +1,113 @@
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+/*
+Using two functions that get the total price of items.
+One method is using linear programming and the other method is using concurrency
+*/
+
+// Fruit : holds information about the fruit
+// price, name and quantity
+type Fruit struct {
+	Name     string
+	Price    float32
+	Quantity int
+	Cost     float32
+}
+
+func (f *Fruit) getCost() {
+	f.Cost = f.Price * float32(f.Quantity)
+	time.Sleep(time.Second)
+}
+
+func main() {
+	var fruits = []Fruit{
+		{Name: "Mango", Price: 10.0, Quantity: 3},
+		{Name: "Apple", Price: 30.0, Quantity: 45},
+		{Name: "PawPaw", Price: 34.9, Quantity: 87},
+	}
+
+	totalCost := getTotalCostLinear(fruits)
+	fmt.Println(totalCost)
+
+	totalCost = getTotalCostConcurrent(fruits)
+	fmt.Println(totalCost)
+}
+
+// normal processing for total cost
+func getTotalCostLinear(fruits []Fruit) (totalCost float32) {
+	// loop through the fruits and get the cost for each
+	// add the cost to the totalCost variable
+	start := time.Now()
+	for _, fruit := range fruits {
+		fruit.getCost() // takes 1 second
+		totalCost += fruit.Cost
+	}
+	fmt.Printf("linear took %v\n", time.Since(start))
+	return totalCost
+}
+
+func getTotalCostConcurrent(fruits []Fruit) (totalCost float32) {
+	start := time.Now()
+
+	// we'll use channels because we expect results. (costs)
+	// if we were not expecting results we would use waitgroups.
+	// google channels vs waitgroups in Go
+
+	// 1. Knowing how many data points you are going to process
+	size := len(fruits)
+	// 2. Knowing how many goroutines (workers) you will need.
+	// this is usually less or equal to the size
+	workers := size
+
+	// 3. Create two channels.
+	// jobs : will hold the data to be processed. This is the same data type as the input data. Fruit
+	// results : will hold the results expected - cost (float32)
+	jobs := make(chan Fruit, size)
+	results := make(chan float32, size)
+
+	// NB :: Steps 4,5 and 6 usually happen concurrently
+
+	// 4. Add the data to the jobs channel
+	for _, fruit := range fruits {
+		// adding / reading data to a channel : we use this symbol <-
+		// it points where the data is going to
+		jobs <- fruit
+	}
+
+	// 5. Create the goroutines / worker
+	// pass the jobs and result channels
+	// each goroutine/worker will read from the jobs channel and write to the results channel
+	for i := 0; i < workers; i++ { // just to count the number of workers
+		go worker(jobs, results)
+	}
+
+	// 6. Read the results
+	for i := 0; i < size; i++ {
+		cost := <-results
+		totalCost += cost
+		// alternative
+		// totalCost += <- results
+	}
+
+	// 7. Use the result
+	fmt.Printf("concurrent took %v\n", time.Since(start))
+	return totalCost
+}
+
+// worker / goroutine
+// 1. Never return something from the goroutine
+// always add the result to a channel
+// 2. Note the difference in the two channels.
+// because we are reading from chan of fruits (jobs)
+// and writing into a channel of floats (results)
+func worker(jobs <-chan Fruit, results chan<- float32) {
+	for j := range jobs {
+		j.getCost()
+		results <- j.Cost
+	}
+}
